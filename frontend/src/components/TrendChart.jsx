@@ -16,10 +16,11 @@ export default function TrendChart({ baseCurrency, targetCurrency }) {
         
         // Transform data for chart if needed. Assuming API returns { date: 'YYYY-MM-DD', rate: 1.23 }
         const formattedData = (historyData || []).map(item => {
-          const dateObj = new Date(item.date);
+          const parts = (item.date || '').split('-');
+          const formattedDate = parts.length === 3 ? `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}` : item.date;
           return {
             ...item,
-            formattedDate: `${dateObj.getMonth() + 1}/${dateObj.getDate()}`
+            formattedDate
           };
         });
         

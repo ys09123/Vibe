@@ -52,13 +52,40 @@ async function initDatabase() {
     return db;
 }
 
-function saveDatabase() {
+let saveTimer = null;
+
+function flushDatabase() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
     if (db) {
-        const data = db.export();
-        const buffer = Buffer.from(data);
-        fs.writeFileSync(DB_PATH, buffer);
+        try {
+            const data = db.export();
+            fs.writeFileSync(DB_PATH, Buffer.from(data));
+        } catch (err) {
+            console.error('Failed to flush database:', err);
+        }
     }
 }
+
+function saveDatabase() {
+    if (!db) return;
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        try {
+            const data = db.export();
+            fs.writeFileSync(DB_PATH, Buffer.from(data));
+        } catch (err) {
+            console.error('Failed to persist database:', err);
+        }
+    }, 1000);
+}
+
+process.on('exit', flushDatabase);
+process.on('SIGINT', () => { flushDatabase(); process.exit(0); });
+process.on('SIGTERM', () => { flushDatabase(); process.exit(0); });
 
 function getDb() {
     if (!db) throw new Error('Database not initialized');
@@ -70,7 +97,7 @@ function prepare(sql) {
     return {
         get(...params) {
             const stmt = db.prepare(sql);
-            stmt.bind(params);
+            if (params.length > 0) stmt.bind(params);
             if (stmt.step()) {
                 const row = stmt.getAsObject();
                 stmt.free();
@@ -82,7 +109,7 @@ function prepare(sql) {
         all(...params) {
             const results = [];
             const stmt = db.prepare(sql);
-            stmt.bind(params);
+            if (params.length > 0) stmt.bind(params);
             while (stmt.step()) {
                 results.push(stmt.getAsObject());
             }
@@ -90,9 +117,21 @@ function prepare(sql) {
             return results;
         },
         run(...params) {
-            db.run(sql, params);
+            const stmt = db.prepare(sql);
+            if (params.length > 0) stmt.bind(params);
+            try {
+                stmt.step();
+            } catch (err) {
+                if (err.message && err.message.includes('UNIQUE constraint failed')) {
+                    err.code = 'SQLITE_CONSTRAINT_UNIQUE';
+                }
+                throw err;
+            } finally {
+                stmt.free();
+            }
+            const changes = db.getRowsModified();
             saveDatabase();
-            return { changes: db.getRowsModified() };
+            return { changes };
         }
     };
 }

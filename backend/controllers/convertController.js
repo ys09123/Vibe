@@ -15,8 +15,8 @@ async function convert(req, res, next) {
             cacheService.setCachedRate(from, to, rate, todayDateStr);
         }
 
-        const convertedAmount = Number((amount * rate).toFixed(CONVERSION_DECIMAL_PLACES));
         rate = Number(rate.toFixed(RATE_DECIMAL_PLACES));
+        const convertedAmount = Number((amount * rate).toFixed(CONVERSION_DECIMAL_PLACES));
 
         const db = dbModule.db;
         db.prepare(`

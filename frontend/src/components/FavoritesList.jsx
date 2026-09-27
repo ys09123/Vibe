@@ -4,6 +4,7 @@ import { api } from '../services/api';
 export default function FavoritesList({ onSelectPair }) {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchFavorites();
@@ -11,11 +12,12 @@ export default function FavoritesList({ onSelectPair }) {
 
   const fetchFavorites = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.getFavorites();
       setFavorites(data || []);
     } catch (err) {
-      console.error('Failed to fetch favorites', err);
+      setError(err.message || 'Failed to load favorites');
     } finally {
       setLoading(false);
     }
@@ -27,7 +29,7 @@ export default function FavoritesList({ onSelectPair }) {
       await api.deleteFavorite(id);
       setFavorites(favorites.filter(f => f.id !== id));
     } catch (err) {
-      console.error('Failed to delete favorite', err);
+      setError(err.message || 'Failed to delete favorite');
     }
   };
 
@@ -37,6 +39,10 @@ export default function FavoritesList({ onSelectPair }) {
         <h2 className="text-lg font-semibold text-gray-800">★ Favorites</h2>
         <span className="text-xs text-gray-500 font-medium">{favorites.length} saved</span>
       </div>
+      
+      {error && (
+        <div className="text-xs text-red-500 py-1 mb-2">{error}</div>
+      )}
       
       {loading && favorites.length === 0 ? (
         <div className="text-sm text-gray-500 py-2">Loading...</div>

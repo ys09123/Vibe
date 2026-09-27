@@ -4,6 +4,7 @@ import { api } from '../services/api';
 export default function ConversionHistory({ onSelectPair }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -12,11 +13,12 @@ export default function ConversionHistory({ onSelectPair }) {
 
   const fetchHistory = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.getConversionHistory();
       setHistory(data || []);
     } catch (err) {
-      console.error('Failed to fetch history', err);
+      setError(err.message || 'Failed to load history');
     } finally {
       setLoading(false);
     }
@@ -28,6 +30,10 @@ export default function ConversionHistory({ onSelectPair }) {
   return (
     <div className="bg-white rounded-lg shadow-sm p-4">
       <h2 className="text-lg font-semibold text-gray-800 mb-3">Recent Conversions</h2>
+      
+      {error && (
+        <div className="text-xs text-red-500 py-1 mb-2">{error}</div>
+      )}
       
       {loading && history.length === 0 ? (
         <div className="text-sm text-gray-500 py-2">Loading...</div>

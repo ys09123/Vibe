@@ -40,49 +40,92 @@ async function getHistoryRates(req, res, next) {
         const days = Math.min(parseInt(req.query.days) || 30, 90);
 
         const today = new Date();
+        const todayDateStr = today.toISOString().split('T')[0];
+
+        // Ensure today's rate is cached if possible via standard pair endpoint (supported on free tier)
+        if (!cacheService.getCachedRate(base, target, todayDateStr)) {
+            try {
+                const pairData = await exchangeRateService.getPairRate(base, target);
+                if (pairData && pairData.rate) {
+                    cacheService.setCachedRate(base, target, Number(pairData.rate.toFixed(RATE_DECIMAL_PLACES)), todayDateStr);
+                }
+            } catch (e) {
+                // Non-fatal if offline
+            }
+        }
+
+        // Retrieve existing history from SQLite cache
+        const history = cacheService.getCachedHistory(base, target, days);
+        const cachedMap = new Map(history.map(item => [item.date, item.rate]));
+
         const resultData = [];
-        let apiAttempted = false;
-        let apiFailed = false;
+        const missingDates = [];
 
         for (let i = days - 1; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(today.getDate() - i);
             const dateStr = d.toISOString().split('T')[0];
 
-            const cached = cacheService.getCachedRate(base, target, dateStr);
-            if (cached) {
-                resultData.push({ date: dateStr, rate: cached });
-                continue;
-            }
-
-            if (apiFailed) continue;
-
-            // Try the historical API (paid tier only — returns null on free)
-            apiAttempted = true;
-            const year = d.getFullYear();
-            const month = d.getMonth() + 1; // No zero-padding per API spec
-            const day = d.getDate();
-
-            const apiRates = await exchangeRateService.getHistoricalRate(base, year, month, day);
-            if (apiRates && apiRates[target]) {
-                const rate = Number(apiRates[target].toFixed(RATE_DECIMAL_PLACES));
-                cacheService.setCachedRate(base, target, rate, dateStr);
-                resultData.push({ date: dateStr, rate });
+            if (cachedMap.has(dateStr)) {
+                resultData.push({ date: dateStr, rate: cachedMap.get(dateStr) });
             } else {
+                missingDates.push({ date: dateStr, d });
+            }
+        }
+
+        let apiAttempted = false;
+        let apiFailed = false;
+
+        // If any historical dates are missing, probe the historical endpoint on one date first
+        if (missingDates.length > 0) {
+            const probe = missingDates[0];
+            apiAttempted = true;
+            const probeRate = await exchangeRateService.getHistoricalRate(
+                base,
+                probe.d.getFullYear(),
+                probe.d.getMonth() + 1,
+                probe.d.getDate()
+            );
+
+            if (probeRate && probeRate[target]) {
+                const rate = Number(probeRate[target].toFixed(RATE_DECIMAL_PLACES));
+                cacheService.setCachedRate(base, target, rate, probe.date);
+                resultData.push({ date: probe.date, rate });
+
+                // Key has historical access. Fetch remaining missing dates in small batches
+                const remaining = missingDates.slice(1);
+                const batchSize = 5;
+                for (let i = 0; i < remaining.length; i += batchSize) {
+                    const batch = remaining.slice(i, i + batchSize);
+                    const batchResults = await Promise.all(
+                        batch.map(async item => {
+                            const rates = await exchangeRateService.getHistoricalRate(
+                                base,
+                                item.d.getFullYear(),
+                                item.d.getMonth() + 1,
+                                item.d.getDate()
+                            );
+                            if (rates && rates[target]) {
+                                const r = Number(rates[target].toFixed(RATE_DECIMAL_PLACES));
+                                cacheService.setCachedRate(base, target, r, item.date);
+                                return { date: item.date, rate: r };
+                            }
+                            return null;
+                        })
+                    );
+                    batchResults.filter(Boolean).forEach(r => resultData.push(r));
+                }
+            } else {
+                // Free tier or historical unavailable; stop here
                 apiFailed = true;
             }
         }
 
-        // If we got nothing from API, fall back to whatever cache has
-        let dataSource = 'cache';
-        if (resultData.length === 0) {
-            const fallback = cacheService.getCachedHistory(base, target, days);
-            fallback.forEach(row => resultData.push(row));
-        } else if (apiAttempted && !apiFailed) {
-            dataSource = 'api';
-        } else if (apiAttempted && apiFailed) {
-            dataSource = 'partial';
-        }
+        resultData.sort((a, b) => (a.date > b.date ? 1 : -1));
+
+        const dataSource = apiAttempted && !apiFailed && resultData.length === days
+            ? 'api'
+            : (resultData.length > 0 ? 'partial' : 'cache');
 
         res.json({
             success: true,

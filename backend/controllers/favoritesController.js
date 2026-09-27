@@ -31,7 +31,7 @@ function addFavorite(req, res, next) {
             `).run(source_currency, target_currency);
             res.status(201).json({ success: true, data: { source_currency, target_currency } });
         } catch (dbErr) {
-            if (dbErr.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+            if (dbErr.code === 'SQLITE_CONSTRAINT_UNIQUE' || (dbErr.message && dbErr.message.includes('UNIQUE constraint failed'))) {
                 return res.status(409).json({
                     success: false,
                     error: { code: 'ALREADY_EXISTS', message: 'Favorite already exists' }

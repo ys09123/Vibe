@@ -1,4 +1,11 @@
-const BASE_URL = 'http://localhost:5000/api';
+const getBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl) return 'http://localhost:5000/api';
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+};
+
+const BASE_URL = getBaseUrl();
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
@@ -11,12 +18,14 @@ async function fetchJson(url, options = {}) {
 
   const data = await response.json().catch(() => null);
 
+  const errorMessage = data?.error?.message || (typeof data?.error === 'string' ? data.error : null) || data?.message || 'An error occurred';
+
   if (!response.ok) {
-    throw new Error(data?.error || data?.message || 'An error occurred');
+    throw new Error(errorMessage);
   }
 
   if (data && data.success === false) {
-    throw new Error(data.error || 'An error occurred');
+    throw new Error(errorMessage);
   }
 
   return data ? (data.data !== undefined ? data.data : data) : null;

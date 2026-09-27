@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import CurrencySelector from './CurrencySelector';
 import ErrorMessage from './ErrorMessage';
 import { api } from '../services/api';
