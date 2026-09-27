@@ -13,17 +13,38 @@ const travelBudgetRoutes = require('./routes/travelBudget');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-    : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:4173'];
+const userOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim().replace(/\/+$/, ''))
+    : [];
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin) return callback(null, true);
+
+        const cleanOrigin = origin.replace(/\/+$/, '');
+
+        // Allow wildcard if configured
+        if (process.env.ALLOWED_ORIGINS === '*') return callback(null, true);
+
+        // Allow local development servers
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
             return callback(null, true);
         }
-        return callback(new Error('CORS request blocked: origin not allowed'));
-    }
+
+        // Automatically allow Vercel domains (*.vercel.app)
+        if (cleanOrigin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        }
+
+        // Allow custom domains from ALLOWED_ORIGINS
+        if (userOrigins.includes(cleanOrigin)) {
+            return callback(null, true);
+        }
+
+        return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
